@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PNGlove — 画像 PNG 変換</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <style>
+    :root {
+      --bg:           #eef6e6;
+      --surface:      #f8fbf3;
+      --card:         #ffffff;
+      --border:       #c8ddb4;
+      --border-lit:   #8fba70;
+      --accent:       #3a7d4e;
+      --accent-bright:#2d6640;
+      --gold:         #8a6c18;
+      --gold-dim:     #c49830;
+      --error:        #b83c2c;
+      --text:         #1c3022;
+      --text-dim:     #3d5c44;
+      --muted:        #6a8a6e;
+      --radius:       10px;
+      --shadow:       0 4px 20px rgba(40,80,50,.10);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', 'Hiragino Sans', 'Yu Gothic UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 40px 16px 64px;
+      background-image:
+        radial-gradient(ellipse at 50% 0%, #d4ecbc 0%, transparent 65%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 44px;
+    }
+    .logo-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 8px;
+    }
+    /* CSS leaf mark */
+    .leaf-mark {
+      width: 22px;
+      height: 28px;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .leaf-mark::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--accent);
+      border-radius: 0 60% 0 60%;
+      transform: rotate(-30deg);
+      opacity: .85;
+    }
+    .leaf-mark::after {
+      content: '';
+      position: absolute;
+      left: 50%; top: 50%;
+      transform: translate(-50%,-50%) rotate(-30deg);
+      width: 1.5px;
+      height: 60%;
+      background: rgba(0,0,0,.3);
+      border-radius: 2px;
+    }
+    .logo {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -.5px;
+      color: var(--text);
+    }
+    .logo em {
+      font-style: normal;
+      color: var(--accent);
+    }
+    .tagline {
+      color: var(--muted);
+      font-size: .88rem;
+      letter-spacing: .5px;
+    }
+    /* thin vine lines */
+    header::after {
+      content: '';
+      display: block;
+      width: 120px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-lit), transparent);
+      margin: 18px auto 0;
+    }
+
+    /* ── Drop Zone ── */
+    .drop-zone {
+      position: relative;
+      border: 1px solid var(--border-lit);
+      border-radius: var(--radius);
+      padding: 52px 24px 48px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .25s, background .25s, box-shadow .25s;
+      background: var(--surface);
+      max-width: 680px;
+      margin: 0 auto 28px;
+      overflow: hidden;
+    }
+    /* corner leaf accents */
+    .drop-zone::before,
+    .drop-zone::after {
+      content: '';
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border-color: var(--border-lit);
+      border-style: solid;
+      transition: border-color .25s;
+    }
+    .drop-zone::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; border-radius: var(--radius) 0 0 0; }
+    .drop-zone::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; border-radius: 0 0 var(--radius) 0; }
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(58,125,78,.05);
+      box-shadow: 0 0 0 4px rgba(58,125,78,.08), inset 0 0 60px rgba(58,125,78,.04);
+    }
+    .drop-zone:hover::before,
+    .drop-zone:hover::after,
+    .drop-zone.drag-over::before,
+    .drop-zone.drag-over::after {
+      border-color: var(--accent);
+    }
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    /* SVG upload icon */
+    .drop-icon {
+      display: block;
+      width: 44px;
+      height: 44px;
+      margin: 0 auto 18px;
+      color: var(--accent);
+      opacity: .7;
+      transition: opacity .2s, transform .2s;
+    }
+    .drop-zone:hover .drop-icon,
+    .drop-zone.drag-over .drop-icon { opacity: 1; transform: translateY(-3px); }
+    .drop-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .drop-sub {
+      font-size: .83rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .drop-sub strong {
+      color: var(--accent-bright);
+      font-weight: 600;
+    }
+    .drop-formats {
+      margin-top: 14px;
+      font-size: .72rem;
+      color: var(--muted);
+      letter-spacing: .4px;
+    }
+
+    /* ── Controls bar ── */
+    .controls {
+      max-width: 680px;
+      margin: 0 auto 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 22px;
+      border: none;
+      border-radius: 8px;
+      font-size: .88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s, box-shadow .15s;
+      letter-spacing: .2px;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    .btn-convert {
+      background: linear-gradient(135deg, #3a8c52, #2d6e40);
+      color: #d4f0da;
+      box-shadow: 0 4px 16px rgba(50,120,70,.35);
+      border: 1px solid rgba(112,196,134,.2);
+    }
+    .btn-convert:not(:disabled):hover {
+      box-shadow: 0 6px 22px rgba(50,120,70,.5);
+      opacity: .92;
+    }
+    .btn-download {
+      background: linear-gradient(135deg, #8a6e28, #6a5218);
+      color: #f0dea0;
+      box-shadow: 0 4px 16px rgba(140,110,40,.3);
+      border: 1px solid rgba(196,162,62,.2);
+    }
+    .btn-download:not(:disabled):hover {
+      box-shadow: 0 6px 22px rgba(140,110,40,.5);
+      opacity: .92;
+    }
+    .btn-clear {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      padding: 8px 18px;
+    }
+    .btn-clear:hover { color: var(--error); border-color: var(--error); }
+
+    .count-badge {
+      background: rgba(0,0,0,.3);
+      border-radius: 999px;
+      padding: 1px 8px;
+      font-size: .72rem;
+      font-weight: 700;
+      min-width: 20px;
+      text-align: center;
+    }
+
+    /* ── File list ── */
+    .file-list {
+      max-width: 680px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .file-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--border-lit);
+      border-radius: var(--radius);
+      padding: 13px 15px;
+      display: grid;
+      grid-template-columns: 50px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      transition: border-color .25s, border-left-color .25s;
+      box-shadow: var(--shadow);
+    }
+    .file-card.done  { border-left-color: var(--accent); }
+    .file-card.error { border-left-color: var(--error); }
+
+    .file-thumb {
+      width: 50px;
+      height: 50px;
+      border-radius: 7px;
+      background: #e8f2de;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .file-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 6px;
+    }
+    .ext-label {
+      font-size: .62rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      color: var(--accent);
+      text-transform: uppercase;
+      opacity: .9;
+    }
+
+    .file-info { min-width: 0; }
+    .file-name {
+      font-weight: 600;
+      font-size: .9rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+    .file-meta {
+      font-size: .76rem;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 9px;
+      border-radius: 4px;
+      font-size: .7rem;
+      font-weight: 600;
+      letter-spacing: .3px;
+    }
+    .status-waiting { background: rgba(100,130,105,.12); color: var(--muted); }
+    .status-working { background: rgba(58,125,78,.12);  color: var(--accent); }
+    .status-done    { background: rgba(58,125,78,.10);  color: var(--accent); }
+    .status-error   { background: rgba(184,60,44,.10);  color: var(--error); }
+
+    /* progress bar */
+    .progress-wrap {
+      height: 2px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 7px;
+    }
+    .progress-bar {
+      height: 100%;
+      border-radius: 99px;
+      background: var(--accent);
+      width: 0%;
+    }
+    .progress-bar.complete {
+      background: var(--accent-bright);
+      transition: width .35s ease;
+    }
+    .progress-bar.failed {
+      background: var(--error);
+      transition: width .2s ease;
+    }
+
+    /* action buttons */
+    .file-actions { display: flex; gap: 7px; flex-shrink: 0; }
+    .btn-icon {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s, border-color .15s;
+      color: var(--muted);
+      font-size: .8rem;
+      font-weight: 700;
+    }
+    .btn-dl       { color: var(--accent); }
+    .btn-dl:not(:disabled):hover { background: rgba(58,125,78,.12); border-color: var(--accent); }
+    .btn-dl:disabled { opacity: .3; cursor: not-allowed; }
+    .btn-rm:hover { background: rgba(184,60,44,.1); border-color: var(--error); color: var(--error); }
+
+    /* Spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+
+    /* ── Stats ── */
+    .stats-bar {
+      max-width: 680px;
+      margin: 16px auto 0;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      font-size: .78rem;
+      color: var(--muted);
+    }
+    .stat { display: flex; gap: 7px; align-items: center; }
+    .stat-pip {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(72px);
+      background: var(--text);
+      border: none;
+      padding: 11px 22px;
+      border-radius: 8px;
+      font-size: .85rem;
+      color: #e8f5e0;
+      box-shadow: 0 6px 24px rgba(20,50,25,.25);
+      transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+      z-index: 9999;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── Responsive ── */
+    @media (max-width: 520px) {
+      .file-card { grid-template-columns: 40px 1fr auto; gap: 9px; }
+      .file-thumb { width: 40px; height: 40px; }
+      .btn { padding: 8px 14px; font-size: .83rem; }
+    }
+
+    /* ── Background forest art ── */
+    .bg-deco {
+      position: fixed;
+      top: 16px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.64rem;
+      line-height: 1.55;
+      color: var(--accent);
+      opacity: 0.22;
+      pointer-events: none;
+      user-select: none;
+      z-index: 0;
+      white-space: pre;
+    }
+    .bg-deco-left  { left: 10px; }
+    .bg-deco-right { right: 10px; }
+    @media (max-width: 980px) { .bg-deco { display: none; } }
+
+    /* ── Footer ── */
+    footer {
+      max-width: 680px;
+      margin: 48px auto 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+    footer p {
+      font-size: .75rem;
+      color: var(--muted);
+      letter-spacing: .5px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-wrap">
+    <div class="leaf-mark" aria-hidden="true"></div>
+    <div class="logo">PNG<em>love</em></div>
+    <div class="leaf-mark" aria-hidden="true" style="transform:scaleX(-1)"></div>
+  </div>
+  <p class="tagline">あらゆる画像フォーマットを、情報量を保ったまま PNG へ</p>
+</header>
+
+<!-- Drop Zone -->
+<div class="drop-zone" id="dropZone">
+  <input type="file" id="fileInput" multiple
+    accept=".heic,.heif,.jpg,.jpeg,.jfif,.jpe,.png,.gif,.bmp,.webp,.tiff,.tif,.avif,.ico,.svg,.jxl">
+
+  <svg class="drop-icon" viewBox="0 0 44 44" fill="none" aria-hidden="true">
+    <path d="M22 6C22 6 10 14 10 25C10 32.7 15.4 38 22 38C28.6 38 34 32.7 34 25C34 14 22 6 22 6Z"
+          stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+    <path d="M22 38L16 26" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M14 10C18 17 26 20 32 16" stroke="currentColor" stroke-width="1.2"
+          stroke-linecap="round" opacity="0.55"/>
+    <path d="M22 20V32" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.4"/>
+  </svg>
+
+  <div class="drop-title">ここにファイルをドロップ</div>
+  <p class="drop-sub">または <strong>クリックして選択</strong></p>
+  <p class="drop-formats">HEIC · HEIF · TIFF · WebP · AVIF · BMP · GIF · ICO · SVG · JPEG など</p>
+</div>
+
+<!-- Controls -->
+<div class="controls" id="controls" style="display:none;">
+  <button class="btn btn-convert" id="btnConvertAll">
+    変換する
+    <span class="count-badge" id="queueCount">0</span>
+  </button>
+  <button class="btn btn-download" id="btnDownloadAll" disabled>
+    まとめてダウンロード（ZIP）
+    <span class="count-badge" id="doneCount">0</span>
+  </button>
+  <button class="btn btn-clear" id="btnClearAll">クリア</button>
+</div>
+
+<!-- File List -->
+<div class="file-list" id="fileList"></div>
+
+<!-- Stats -->
+<div class="stats-bar" id="statsBar" style="display:none;">
+  <div class="stat">
+    <div class="stat-pip" style="background:var(--muted)"></div>
+    <span id="statWaiting">待機 0</span>
+  </div>
+  <div class="stat">
+    <div class="stat-pip" style="background:var(--accent-bright)"></div>
+    <span id="statWorking">変換中 0</span>
+  </div>
+  <div class="stat">
+    <div class="stat-pip" style="background:var(--accent)"></div>
+    <span id="statDone">完了 0</span>
+  </div>
+  <div class="stat">
+    <div class="stat-pip" style="background:var(--error)"></div>
+    <span id="statError">エラー 0</span>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Left: forest trees -->
+<pre class="bg-deco bg-deco-left" aria-hidden="true">     *
+    /|\
+   / | \
+  /  |  \
+  \  |  /
+   \_|_/
+     |
+    _|_
+
+      *
+       /|\
+      / | \
+     /  |  \
+     \  |  /
+      \_|_/
+        |
+       _|_
+
+
+           *
+          /|\
+         / | \
+        /  |  \
+        \  |  /
+         \_|_/
+           |
+          _|_</pre>
+
+<!-- Right: elf girl -->
+<pre class="bg-deco bg-deco-right" aria-hidden="true">     ✦  .  ✦  .  ✦
+   ✦   . ✿ . ✿ .   ✦
+
+      ≺ ( ˘ω˘ ) ≻
+         (      )
+          \    /
+           )  (
+          /    \
+        /  ~~~  \
+       | ~~~~~~~ |
+       | ~~~~~~~ |
+       | ~~~~~~~ |
+        \ ~~~~~ /
+         \_____/
+           | |
+          _| |_
+         (_____)
+
+   .  ✦  .  .  ✦  .  .</pre>
+
+<footer>
+  <p id="footer-copy"></p>
+</footer>
+
+<script>
+"use strict";
+
+const IMAGE_EXTS = new Set([
+  'heic','heif','jpg','jpeg','jfif','jpe','png','gif',
+  'bmp','webp','tiff','tif','avif','ico','svg','jxl'
+]);
+
+let files = [];
+let nextId = 0;
+const progressTimers = {};
+
+/* DOM refs */
+const dropZone       = document.getElementById('dropZone');
+const fileInput      = document.getElementById('fileInput');
+const fileListEl     = document.getElementById('fileList');
+const controlsEl     = document.getElementById('controls');
+const btnConvertAll  = document.getElementById('btnConvertAll');
+const btnDownloadAll = document.getElementById('btnDownloadAll');
+const btnClearAll    = document.getElementById('btnClearAll');
+const queueCountEl   = document.getElementById('queueCount');
+const doneCountEl    = document.getElementById('doneCount');
+const statsBar       = document.getElementById('statsBar');
+
+/* Drag & drop */
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles([...e.dataTransfer.files]);
+});
+fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+btnConvertAll.addEventListener('click', convertAll);
+btnDownloadAll.addEventListener('click', downloadAll);
+btnClearAll.addEventListener('click', clearAll);
+
+/* ── Add files ── */
+function addFiles(list) {
+  list.forEach(f => {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!IMAGE_EXTS.has(ext)) { showToast(`${f.name} は対応していない形式です`); return; }
+    const id = nextId++;
+    const canThumb = !['heic','heif','tiff','tif'].includes(ext);
+    const thumbUrl = canThumb ? URL.createObjectURL(f) : null;
+    files.push({ id, file: f, status: 'waiting', pngBlob: null, pngName: null, thumbUrl });
+    renderCard(files[files.length - 1]);
+  });
+  updateUI();
+}
+
+/* ── Render card ── */
+function renderCard(item) {
+  const ext = item.file.name.split('.').pop().toUpperCase();
+  const card = document.createElement('div');
+  card.className = 'file-card';
+  card.id = `card-${item.id}`;
+
+  const thumb = document.createElement('div');
+  thumb.className = 'file-thumb';
+  thumb.id = `thumb-${item.id}`;
+  if (item.thumbUrl) {
+    const img = document.createElement('img');
+    img.src = item.thumbUrl; img.alt = '';
+    thumb.appendChild(img);
+  } else {
+    const lbl = document.createElement('span');
+    lbl.className = 'ext-label';
+    lbl.textContent = ext;
+    thumb.appendChild(lbl);
+  }
+
+  const info = document.createElement('div');
+  info.className = 'file-info';
+  info.innerHTML = `
+    <div class="file-name" title="${escHtml(item.file.name)}">${escHtml(item.file.name)}</div>
+    <div class="file-meta" id="meta-${item.id}">
+      <span id="size-${item.id}">${fmtSize(item.file.size)}</span>
+      <span id="badge-${item.id}" class="status-badge status-waiting">待機中</span>
+    </div>
+    <div class="progress-wrap"><div class="progress-bar" id="prog-${item.id}"></div></div>`;
+
+  const actions = document.createElement('div');
+  actions.className = 'file-actions';
+  actions.innerHTML = `
+    <button class="btn-icon btn-dl" id="dl-${item.id}" disabled title="ダウンロード">↓</button>
+    <button class="btn-icon btn-rm" id="rm-${item.id}" title="削除">×</button>`;
+
+  card.append(thumb, info, actions);
+  fileListEl.appendChild(card);
+
+  document.getElementById(`rm-${item.id}`).addEventListener('click', () => removeFile(item.id));
+  document.getElementById(`dl-${item.id}`).addEventListener('click', () => downloadFile(item.id));
+}
+
+/* ── Progress helpers ── */
+function startFakeProgress(id) {
+  const prog = document.getElementById(`prog-${id}`);
+  if (!prog) return;
+  prog.style.transition = 'none';
+  prog.style.width = '0%';
+  let pct = 0;
+  progressTimers[id] = setInterval(() => {
+    pct += (90 - pct) * 0.045;
+    prog.style.width = pct.toFixed(1) + '%';
+  }, 80);
+}
+
+function stopFakeProgress(id, success) {
+  clearInterval(progressTimers[id]);
+  delete progressTimers[id];
+  const prog = document.getElementById(`prog-${id}`);
+  if (!prog) return;
+  const cur = parseFloat(prog.style.width) || 0;
+  prog.style.transition = 'none';
+  prog.style.width = cur + '%';
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      prog.classList.add(success ? 'complete' : 'failed');
+      prog.style.width = '100%';
+    });
+  });
+}
+
+/* ── Status update ── */
+function setCardStatus(id, status, extra = {}) {
+  const item = files.find(f => f.id === id);
+  if (!item) return;
+  item.status = status;
+
+  const card  = document.getElementById(`card-${id}`);
+  const badge = document.getElementById(`badge-${id}`);
+  const dlBtn = document.getElementById(`dl-${id}`);
+
+  card.className = 'file-card' + (status === 'done' ? ' done' : status === 'error' ? ' error' : '');
+
+  if (status === 'working') {
+    badge.className = 'status-badge status-working';
+    badge.innerHTML = `<span class="spinner"></span> 変換中`;
+    startFakeProgress(id);
+
+  } else if (status === 'done') {
+    badge.className = 'status-badge status-done';
+    badge.textContent = '完了';
+    stopFakeProgress(id, true);
+    dlBtn.disabled = false;
+
+    if (extra.pngBlob) {
+      document.getElementById(`size-${id}`).textContent =
+        `${fmtSize(item.file.size)} → ${fmtSize(extra.pngBlob.size)}`;
+    }
+    const thumbEl = document.getElementById(`thumb-${id}`);
+    const url = URL.createObjectURL(item.pngBlob);
+    thumbEl.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = url; img.alt = '';
+    thumbEl.appendChild(img);
+
+  } else if (status === 'error') {
+    badge.className = 'status-badge status-error';
+    badge.textContent = 'エラー';
+    stopFakeProgress(id, false);
+    if (extra.errorMsg) {
+      document.getElementById(`size-${id}`).textContent = extra.errorMsg;
+    }
+  }
+  updateUI();
+}
+
+/* ── Convert all ── */
+async function convertAll() {
+  const waiting = files.filter(f => f.status === 'waiting');
+  if (!waiting.length) { showToast('変換待ちのファイルがありません'); return; }
+  btnConvertAll.disabled = true;
+  for (const item of waiting) await convertOne(item);
+  btnConvertAll.disabled = false;
+  const n = files.filter(f => f.status === 'done').length;
+  showToast(`変換が完了しました（${n} 件）`);
+}
+
+async function convertOne(item) {
+  setCardStatus(item.id, 'working');
+  try {
+    const blob = await dispatchConvert(item.file);
+    const ext  = item.file.name.split('.').pop();
+    item.pngBlob = blob;
+    item.pngName = item.file.name.replace(new RegExp(`\\.${ext}$`, 'i'), '') + '.png';
+    setCardStatus(item.id, 'done', { pngBlob: blob });
+  } catch (e) {
+    setCardStatus(item.id, 'error', { errorMsg: String(e.message || e) });
+    console.error(e);
+  }
+}
+
+/* ── Format dispatch ── */
+async function dispatchConvert(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'heic' || ext === 'heif') return convertHEIC(file);
+  if (ext === 'tiff' || ext === 'tif')  return convertTIFF(file);
+  if (ext === 'svg')                    return convertSVG(file);
+  if (ext === 'ico')                    return convertICO(file);
+  return convertViaCanvas(file);
+}
+
+/* HEIC / HEIF */
+async function convertHEIC(file) {
+  if (typeof heic2any === 'undefined') throw new Error('heic2any が読み込まれていません（インターネット接続を確認）');
+  const result = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
+  return Array.isArray(result) ? result[0] : result;
+}
+
+/* TIFF */
+async function convertTIFF(file) {
+  if (typeof UTIF === 'undefined') throw new Error('UTIF.js が読み込まれていません（インターネット接続を確認）');
+  const buf  = await file.arrayBuffer();
+  const ifds = UTIF.decode(buf);
+  UTIF.decodeImages(buf, ifds);
+  const ifd  = ifds[0];
+  const rgba = UTIF.toRGBA8(ifd);
+  const canvas = document.createElement('canvas');
+  canvas.width = ifd.width; canvas.height = ifd.height;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(ifd.width, ifd.height);
+  imgData.data.set(rgba);
+  ctx.putImageData(imgData, 0, 0);
+  return canvasToBlob(canvas);
+}
+
+/* SVG */
+async function convertSVG(file) {
+  const text = await file.text();
+  const parser = new DOMParser();
+  const svgEl  = parser.parseFromString(text, 'image/svg+xml').documentElement;
+  let w = parseFloat(svgEl.getAttribute('width'))  || 0;
+  let h = parseFloat(svgEl.getAttribute('height')) || 0;
+  const vb = svgEl.getAttribute('viewBox');
+  if (vb && (!w || !h)) {
+    const p = vb.trim().split(/[\s,]+/);
+    w = parseFloat(p[2]) || 800;
+    h = parseFloat(p[3]) || 600;
+  }
+  w = w || 800; h = h || 600;
+  const blob = new Blob([text], { type: 'image/svg+xml;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || w; canvas.height = img.naturalHeight || h;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvasToBlob(canvas).then(res).catch(rej);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('SVG の読み込みに失敗')); };
+    img.src = url;
+  });
+}
+
+/* ICO */
+async function convertICO(file) {
+  const url = URL.createObjectURL(file);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || 256; canvas.height = img.naturalHeight || 256;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvasToBlob(canvas).then(res).catch(rej);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); convertICOManual(file).then(res).catch(rej); };
+    img.src = url;
+  });
+}
+async function convertICOManual(file) {
+  const buf  = await file.arrayBuffer();
+  const view = new DataView(buf);
+  const count = view.getUint16(4, true);
+  let bestIdx = 0, bestSize = 0;
+  for (let i = 0; i < count; i++) {
+    const w = view.getUint8(6 + i * 16) || 256;
+    if (w > bestSize) { bestSize = w; bestIdx = i; }
+  }
+  const offset = view.getUint32(6 + bestIdx * 16 + 12, true);
+  const size   = view.getUint32(6 + bestIdx * 16 + 8,  true);
+  const b      = new Blob([buf.slice(offset, offset + size)], { type: 'image/png' });
+  const url    = URL.createObjectURL(b);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvasToBlob(canvas).then(res).catch(rej);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('ICO の解析に失敗')); };
+    img.src = url;
+  });
+}
+
+/* Generic canvas */
+function convertViaCanvas(file) {
+  const url = URL.createObjectURL(file);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvasToBlob(canvas).then(res).catch(rej);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('画像の読み込みに失敗')); };
+    img.src = url;
+  });
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((res, rej) =>
+    canvas.toBlob(b => b ? res(b) : rej(new Error('PNG の生成に失敗')), 'image/png'));
+}
+
+/* ── Download ── */
+function downloadFile(id) {
+  const item = files.find(f => f.id === id);
+  if (item?.pngBlob) saveAs(item.pngBlob, item.pngName);
+}
+
+async function downloadAll() {
+  const done = files.filter(f => f.status === 'done' && f.pngBlob);
+  if (!done.length) { showToast('変換済みのファイルがありません'); return; }
+  const origText = btnDownloadAll.querySelector('.count-badge')?.parentNode?.childNodes[0]?.textContent;
+  btnDownloadAll.disabled = true;
+  const label = btnDownloadAll.childNodes[0];
+  if (label) label.textContent = 'ZIP を作成中... ';
+  try {
+    const zip = new JSZip();
+    done.forEach(item => zip.file(item.pngName, item.pngBlob));
+    const zipBlob = await zip.generateAsync({
+      type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 }
+    });
+    saveAs(zipBlob, 'pnglove_output.zip');
+    showToast(`${done.length} 件を ZIP で保存しました`);
+  } catch(e) {
+    showToast('ZIP の作成に失敗しました');
+    console.error(e);
+  }
+  if (label) label.textContent = 'まとめてダウンロード（ZIP） ';
+  btnDownloadAll.disabled = false;
+  updateUI();
+}
+
+function removeFile(id) {
+  files = files.filter(f => f.id !== id);
+  document.getElementById(`card-${id}`)?.remove();
+  updateUI();
+}
+
+function clearAll() {
+  files = [];
+  fileListEl.innerHTML = '';
+  updateUI();
+}
+
+/* ── UI sync ── */
+function updateUI() {
+  const total   = files.length;
+  const waiting = files.filter(f => f.status === 'waiting').length;
+  const working = files.filter(f => f.status === 'working').length;
+  const done    = files.filter(f => f.status === 'done').length;
+  const error   = files.filter(f => f.status === 'error').length;
+
+  controlsEl.style.display = total ? 'flex' : 'none';
+  statsBar.style.display    = total ? 'flex' : 'none';
+
+  queueCountEl.textContent = waiting;
+  doneCountEl.textContent  = done;
+  btnConvertAll.disabled   = waiting === 0;
+  btnDownloadAll.disabled  = done === 0;
+
+  document.getElementById('statWaiting').textContent = `待機 ${waiting}`;
+  document.getElementById('statWorking').textContent = `変換中 ${working}`;
+  document.getElementById('statDone').textContent    = `完了 ${done}`;
+  document.getElementById('statError').textContent   = `エラー ${error}`;
+}
+
+/* ── Helpers ── */
+function fmtSize(b) {
+  if (b < 1024)      return `${b} B`;
+  if (b < 1048576)   return `${(b/1024).toFixed(1)} KB`;
+  return `${(b/1048576).toFixed(2)} MB`;
+}
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+/* ── Footer copyright ── */
+(function() {
+  const now   = new Date();
+  const y     = now.getFullYear();
+  const m     = String(now.getMonth() + 1).padStart(2, '0');
+  const d     = String(now.getDate()).padStart(2, '0');
+  document.getElementById('footer-copy').textContent =
+    `${y}.${m}.${d}  bravebird.  All rights reserved.`;
+})();
+</script>
+</body>
+</html>
