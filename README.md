@@ -14,7 +14,7 @@ HEIC / HEIF / TIFF / WebP / AVIF / BMP / GIF / ICO / SVG / JPEG など → **PNG
 
 1. `index.html` をブラウザで開く
 2. ファイルをドラッグ＆ドロップ
-3. 「変換する」→「まとめてダウンロード（ZIP）」
+3. 「変換する」
 
 ## 注意
 
