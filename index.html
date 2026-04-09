@@ -839,7 +839,11 @@ function setCardStatus(id, status, extra = {}) {
     badge.textContent = 'エラー';
     stopFakeProgress(id, false);
     if (extra.errorMsg) {
-      document.getElementById(`size-${id}`).textContent = extra.errorMsg;
+      const sizeEl = document.getElementById(`size-${id}`);
+      sizeEl.innerHTML = extra.errorMsg
+        .split('\n')
+        .map(l => escHtml(l))
+        .join('<br>');
     }
   }
   updateUI();
@@ -882,9 +886,31 @@ async function dispatchConvert(file) {
 
 /* HEIC / HEIF */
 async function convertHEIC(file) {
-  if (typeof heic2any === 'undefined') throw new Error('heic2any が読み込まれていません（インターネット接続を確認）');
-  const result = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
-  return Array.isArray(result) ? result[0] : result;
+  // 1. ネイティブデコード（Safari / macOS Chrome はOS側でHEICを処理できる）
+  try {
+    return await convertViaCanvas(file);
+  } catch { /* 非対応ブラウザは次へ */ }
+
+  // 2. heic2any ライブラリ（Windows / Linux 等の非ネイティブ環境向け）
+  if (typeof heic2any === 'undefined') {
+    throw new Error('変換ライブラリが未ロードです（インターネット接続を確認してください）');
+  }
+  try {
+    const result = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
+    return Array.isArray(result) ? result[0] : result;
+  } catch (e) {
+    const msg = String(e?.message ?? e);
+    if (msg.includes('ERR_LIBHEIF') || msg.includes('format not supported')) {
+      throw new Error(
+        'このHEICファイルのフォーマットに対応していません。\n' +
+        '【対処法】\n' +
+        '・Safari または macOS で開いてみてください\n' +
+        '・iPhoneの「設定 → カメラ → フォーマット → 互換性優先」に変えると\n' +
+        '　次回から JPEGで保存されます'
+      );
+    }
+    throw e;
+  }
 }
 
 /* TIFF */
