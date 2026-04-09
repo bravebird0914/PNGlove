@@ -891,26 +891,62 @@ async function convertHEIC(file) {
     return await convertViaCanvas(file);
   } catch { /* 非対応ブラウザは次へ */ }
 
-  // 2. heic2any ライブラリ（Windows / Linux 等の非ネイティブ環境向け）
-  if (typeof heic2any === 'undefined') {
-    throw new Error('変換ライブラリが未ロードです（インターネット接続を確認してください）');
-  }
-  try {
-    const result = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
-    return Array.isArray(result) ? result[0] : result;
-  } catch (e) {
-    const msg = String(e?.message ?? e);
-    if (msg.includes('ERR_LIBHEIF') || msg.includes('format not supported')) {
-      throw new Error(
-        'このHEICファイルのフォーマットに対応していません。\n' +
-        '【対処法】\n' +
-        '・Safari または macOS で開いてみてください\n' +
-        '・iPhoneの「設定 → カメラ → フォーマット → 互換性優先」に変えると\n' +
-        '　次回から JPEGで保存されます'
-      );
+  // 2. heic2any（旧libheif・標準的なHEIC向け）
+  if (typeof heic2any !== 'undefined') {
+    try {
+      const result = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
+      return Array.isArray(result) ? result[0] : result;
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (!msg.includes('ERR_LIBHEIF') && !msg.includes('format not supported')) throw e;
+      // ERR_LIBHEIF は旧libheifの対応外 → 新libheifで再試行
     }
-    throw e;
   }
+
+  // 3. libheif-js v1.18（新ライブラリ・HDR/10bit等の新形式に対応）
+  try {
+    const mod = await import('https://esm.sh/libheif-js@1.18.2/wasm-bundle');
+    const libheif = mod.default || mod;
+
+    const buf   = await file.arrayBuffer();
+    const dec   = new libheif.HeifDecoder();
+    const imgs  = dec.decode(new Uint8Array(buf));
+
+    if (!imgs?.length) throw new Error('フレームなし');
+
+    const img = imgs[0];
+    const w   = img.get_width();
+    const h   = img.get_height();
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx    = canvas.getContext('2d');
+    const idata  = ctx.createImageData(w, h);
+
+    await new Promise((res, rej) =>
+      img.display(idata, (d) => {
+        if (!d) { rej(new Error('レンダリング失敗')); return; }
+        ctx.putImageData(d, 0, 0);
+        res();
+      })
+    );
+    return canvasToBlob(canvas);
+  } catch (e3) {
+    if (e3 instanceof TypeError && String(e3).includes('import')) {
+      /* 動的importブロック環境 – スキップ */
+    }
+  }
+
+  // 4. 全デコーダ失敗 → 対処法を表示
+  throw new Error(
+    'このHEICファイルの変換に失敗しました（未対応コーデック）\n' +
+    '\n' +
+    '【試してみてください】\n' +
+    '① Safari または macOS のブラウザで開く\n' +
+    '② iPhone → 設定 → カメラ → フォーマット → 互換性優先\n' +
+    '   （次回撮影からJPEGで保存されます）\n' +
+    '③ iPhoneの写真アプリで共有 → "ファイルに保存" → JPEGを選択'
+  );
 }
 
 /* TIFF */
